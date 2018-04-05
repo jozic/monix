@@ -339,8 +339,16 @@ lazy val executionJS = project.in(file("monix-execution/js"))
   .settings(requiredMacroDeps)
   .settings(executionCommon)
 
+lazy val doctestTestSettings = Seq(
+  testFrameworks += new TestFramework("utest.runner.Framework"),
+  doctestTestFramework := DoctestTestFramework.MicroTest,
+  libraryDependencies ++= Seq(
+    "com.lihaoyi"    %% "utest"      % "0.6.3"  % Test,
+  )
+)
+
 lazy val evalCommon =
-  crossSettings ++ testSettings ++ Seq(
+  crossSettings ++ testSettings ++ doctestTestSettings ++ Seq(
     name := "monix-eval"
   )
 

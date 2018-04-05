@@ -63,8 +63,8 @@ import scala.util.{Failure, Success, Try}
   * [[monix.eval.Task.apply Task.apply]]:
   *
   * {{{
-  *   val hello = Task.eval("Hello ")
-  *   val world = Task("World!")
+  *   scala> val hello = Task.eval("Hello ")
+  *   scala> val world = Task("World!")
   * }}}
   *
   * Nothing gets executed yet, as `Task` is lazy, nothing executes
@@ -75,18 +75,19 @@ import scala.util.{Failure, Success, Try}
   * it's in a very real sense because of the laziness involved:
   *
   * {{{
-  *   val sayHello = hello
-  *     .flatMap(h => world.map(w => h + w))
-  *     .map(println)
+  *   scala> val sayHello = hello.
+  *        | flatMap(h => world.map(w => h + w)).
+  *        | map(println)
   * }}}
   *
   * This `Task` reference will trigger a side effect on evaluation, but
   * not yet. To make the above print its message:
   *
   * {{{
-  *   import monix.execution.CancelableFuture
+  *   scala> import monix.execution.Scheduler.Implicits.global
+  *   scala> import monix.execution.CancelableFuture
   *
-  *   val f: CancelableFuture[Unit] = sayHello.run()
+  *   scala> val f: CancelableFuture[Unit] = sayHello.runAsync
   *   //=> Hello World!
   * }}}
   *
@@ -103,16 +104,16 @@ import scala.util.{Failure, Success, Try}
   * has real consequences. For example with `Task` you can do this:
   *
   * {{{
-  *   def retryOnFailure[A](times: Int, source: Task[A]): Task[A] =
-  *     source.onErrorRecoverWith { err =>
-  *       // No more retries left? Re-throw error:
-  *       if (times <= 0) Task.raiseError(err) else {
-  *         // Recursive call, yes we can!
-  *         retryOnFailure(times - 1, source)
-  *           // Adding 500 ms delay for good measure
-  *           .delayExecution(500)
-  *       }
-  *     }
+  *   scala> def retryOnFailure[A](times: Int, source: Task[A]): Task[A] =
+  *        | source.onErrorRecoverWith { err =>
+  *        | // No more retries left? Re-throw error:
+  *        |   if (times <= 0) Task.raiseError(err) else {
+  *        |     // Recursive call, yes we can!
+  *        |     retryOnFailure(times - 1, source).
+  *        |     // Adding 500 ms delay for good measure
+  *        |     delayExecution(500)
+  *        |   }
+  *        | }
   * }}}
   *
   * `Future` being a strict value-wannabe means that the actual value
@@ -154,19 +155,19 @@ import scala.util.{Failure, Success, Try}
   *
   * {{{
   *   // Some array of tasks, you come up with something good :-)
-  *   val list: Seq[Task[Int]] = ???
+  *   scala> val list: Seq[Task[Int]] = ???
   *
   *   // Split our list in chunks of 30 items per chunk,
   *   // this being the maximum parallelism allowed
-  *   val chunks = list.sliding(30, 30)
+  *   scala> val chunks = list.sliding(30, 30)
   *
   *   // Specify that each batch should process stuff in parallel
-  *   val batchedTasks = chunks.map(chunk => Task.gather(chunk))
+  *   scala> val batchedTasks = chunks.map(chunk => Task.gather(chunk))
   *   // Sequence the batches
-  *   val allBatches = Task.sequence(batchedTasks)
+  *   scala> val allBatches = Task.sequence(batchedTasks)
   *
   *   // Flatten the result, within the context of Task
-  *   val all: Task[Seq[Int]] = allBatches.map(_.flatten)
+  *   scala> val all: Task[Seq[Int]] = allBatches.map(_.flatten)
   * }}}
   *
   * Note that the built `Task` reference is just a specification at
@@ -1368,17 +1369,18 @@ sealed abstract class Task[+A] extends Serializable {
     *
     * Example:
     * {{{
-    *   import java.util.concurrent.CancellationException
+    *   scala> import java.util.concurrent.CancellationException
+    *   scala> import scala.concurrent.duration._
     *
-    *   val tenSecs = Task.sleep(10.seconds)
-    *     .onCancelRaiseError(new CancellationException)
+    *   scala> val tenSecs = Task.sleep(10.seconds).
+    *        | onCancelRaiseError(new CancellationException)
     *
-    *   val task = tenSecs.fork.flatMap { fa =>
-    *     // Triggering pure cancellation, then trying to get its result
-    *     fa.cancel.flatMap(_ => fa)
-    *   }
+    *   scala> val task = tenSecs.fork.flatMap { fa =>
+    *        |   // Triggering pure cancellation, then trying to get its result
+    *        |   fa.cancel.flatMap(_ => fa)
+    *        | }
     *
-    *   task.runAsync
+    *   scala> task.runAsync
     *   // => CancellationException
     * }}}
     */

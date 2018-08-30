@@ -109,7 +109,8 @@ import scala.util.{Failure, Success}
   *       throw new RuntimeException("dummy")
   *   }
   *
-  *   val task = circuitBreaker.protect(problematic)
+  *   val task = circuitBreaker
+  *     .flatMap(_.protect(problematic))
   * }}}
   *
   * When attempting to close the circuit breaker and resume normal
@@ -117,7 +118,7 @@ import scala.util.{Failure, Success}
   * failed attempts, like so:
   *
   * {{{
-  *   val circuitBreaker = TaskCircuitBreaker(
+  *   val exponential = TaskCircuitBreaker(
   *     maxFailures = 5,
   *     resetTimeout = 10.seconds,
   *     exponentialBackoffFactor = 2,
@@ -533,11 +534,6 @@ object TaskCircuitBreaker {
   final case class Open(startedAt: Timestamp, resetTimeout: FiniteDuration) extends State {
     /** The timestamp in milliseconds since the epoch, specifying
       * when the `Open` state is to transition to [[HalfOpen]].
-      *
-      * It is calculated as:
-      * {{{
-      *   startedAt + resetTimeout.toMillis
-      * }}}
       */
     val expiresAt: Timestamp = startedAt + resetTimeout.toMillis
   }

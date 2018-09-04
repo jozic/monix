@@ -86,9 +86,10 @@ import scala.util.{Failure, Success, Try}
   *
   * {{{
   *   import monix.execution.CancelableFuture
+  *   import monix.execution.Scheduler.Implicits.global
   *
   *   val f: CancelableFuture[Unit] = sayHello.runAsync
-  *   //=> Hello World!
+  *   // => Hello World!
   * }}}
   *
   * The returned type is a
@@ -104,14 +105,16 @@ import scala.util.{Failure, Success, Try}
   * has real consequences. For example with `Task` you can do this:
   *
   * {{{
+  *   import scala.concurrent.duration._
+  *
   *   def retryOnFailure[A](times: Int, source: Task[A]): Task[A] =
-  *     source.onErrorRecoverWith { err =>
+  *     source.onErrorHandleWith { err =>
   *       // No more retries left? Re-throw error:
   *       if (times <= 0) Task.raiseError(err) else {
   *         // Recursive call, yes we can!
   *         retryOnFailure(times - 1, source)
   *           // Adding 500 ms delay for good measure
-  *           .delayExecution(500)
+  *           .delayExecution(500.millis)
   *       }
   *     }
   * }}}
@@ -122,7 +125,7 @@ import scala.util.{Failure, Success, Try}
   * do memoization of course:
   *
   * {{{
-  * task.memoize
+  *   Task.eval(println("boo")).memoize
   * }}}
   *
   * The difference between this and just calling `runAsync()` is that
@@ -133,7 +136,7 @@ import scala.util.{Failure, Success, Try}
   * But here's something else that the `Future` data type cannot do:
   *
   * {{{
-  * task.memoizeOnSuccess
+  *   Task.eval(println("moo")).memoizeOnSuccess
   * }}}
   *
   * This keeps repeating the computation for as long as the result is a
@@ -167,7 +170,7 @@ import scala.util.{Failure, Success, Try}
   *   val allBatches = Task.sequence(batchedTasks)
   *
   *   // Flatten the result, within the context of Task
-  *   val all: Task[Seq[Int]] = allBatches.map(_.flatten)
+  *   val all: Task[Iterator[Int]] = allBatches.map(_.flatten)
   * }}}
   *
   * Note that the built `Task` reference is just a specification at
@@ -189,6 +192,7 @@ import scala.util.{Failure, Success, Try}
   *
   * {{{
   *   import scala.concurrent.duration._
+  *   import scala.util._
   *
   *   val delayedHello = Task.cancelable { (scheduler, callback) =>
   *     val task = scheduler.scheduleOnce(1.second) {
@@ -200,7 +204,7 @@ import scala.util.{Failure, Success, Try}
   *     Cancelable { () => {
   *       println("Cancelling!")
   *       task.cancel()
-  *     }
+  *     }}
   *   }
   * }}}
   *
@@ -220,10 +224,10 @@ import scala.util.{Failure, Success, Try}
   *
   * {{{
   *   // Triggering execution
-  *   val f: CancelableFuture[Unit] = delayedHello.runAsync
+  *   val cf: CancelableFuture[Unit] = delayedHello.runAsync
   *
   *   // If we change our mind before the timespan has passed:
-  *   f.cancel()
+  *   cf.cancel()
   * }}}
   *
   * But also cancellation is described on `Task` as a pure action,
@@ -231,6 +235,7 @@ import scala.util.{Failure, Success, Try}
   *
   * {{{
   *   import scala.concurrent.duration._
+  *   import scala.concurrent.TimeoutException
   *
   *   val ta = Task(1 + 1).delayExecution(4.seconds)
   *
@@ -1420,9 +1425,9 @@ sealed abstract class Task[+A] extends TaskBinCompat[A] with Serializable {
     *
     * IMPORTANT — this operation forces an asynchronous boundary before
     * execution, as in general this law holds:
-    * {{{
+    * ```scala
     *   fa.fork <-> fa.executeAsync.start
-    * }}}
+    * ```
     *
     * See [[start]] for the equivalent that does not start the task with
     * a forced async boundary.
@@ -1435,9 +1440,9 @@ sealed abstract class Task[+A] extends TaskBinCompat[A] with Serializable {
     *
     * Similar to [[fork]] after mapping result to Unit. Below law holds:
     *
-    * {{{
+    * ```scala
     *   task.forkAndForget <-> task.fork.map(_ => ())
-    * }}}
+    * ```
     *
     */
   final def forkAndForget: Task[Unit] =
@@ -1710,9 +1715,9 @@ sealed abstract class Task[+A] extends TaskBinCompat[A] with Serializable {
     * You can either use [[fork]] as an alternative, or use [[executeAsync]]
     * just before calling `register`, as in general this law holds:
     *
-    * {{{
+    * ```scala
     *   fa.fork <-> fa.executeAsync.start
-    * }}}
+    * ```
     *
     * See [[fork]] for the equivalent that does starts the task with
     * a forced async boundary.
@@ -1825,15 +1830,15 @@ sealed abstract class Task[+A] extends TaskBinCompat[A] with Serializable {
     * This is an optimization on usage of [[attempt]] and [[map]],
     * this equivalence being true:
     *
-    * {{{
+    * ```scala
     *   task.redeem(recover, map) <-> task.attempt.map(_.fold(recover, map))
-    * }}}
+    * ```
     *
     * Usage of `redeem` subsumes `onErrorHandle` because:
     *
-    * {{{
+    * ```scala
     *   task.redeem(fe, id) <-> task.onErrorHandle(fe)
-    * }}}
+    * ```
     *
     * @param recover is a function used for error recover in case the
     *        source ends in error
@@ -1850,21 +1855,21 @@ sealed abstract class Task[+A] extends TaskBinCompat[A] with Serializable {
     * This is an optimization on usage of [[attempt]] and [[flatMap]],
     * this equivalence being available:
     *
-    * {{{
+    * ```scala
     *   task.redeemWith(recover, bind) <-> task.attempt.flatMap(_.fold(recover, bind))
-    * }}}
+    * ```
     *
     * Usage of `redeemWith` subsumes `onErrorHandleWith` because:
     *
-    * {{{
+    * ```scala
     *   task.redeemWith(fe, F.pure) <-> task.onErrorHandleWith(fe)
-    * }}}
+    * ```
     *
     * Usage of `redeemWith` also subsumes [[flatMap]] because:
     *
-    * {{{
+    * ```scala
     *   task.redeemWith(Task.raiseError, fs) <-> task.flatMap(fs)
-    * }}}
+    * ```
     *
     * @param recover is the function that gets called to recover the source
     *        in case of error
@@ -1911,6 +1916,8 @@ sealed abstract class Task[+A] extends TaskBinCompat[A] with Serializable {
   *         [[Task.executeAsync executeAsync]]:
   *
   *         {{{
+  *           val task = Task.eval(35)
+  *
   *           Task.shift.flatMap(_ => task)
   *         }}}
   *
@@ -1961,6 +1968,7 @@ object Task extends TaskInstancesLevel1 {
     * This is a alias for:
     *
     * {{{
+    *   val thunk = () => 42
     *   Task.eval(thunk)
     * }}}
     *
@@ -2103,9 +2111,9 @@ object Task extends TaskInstancesLevel1 {
     * Like [[eval]], but the provided `thunk` will not be evaluated immediately.
     * Equivalence:
     *
-    * {{{
+    * ```scala
     *   Task.evalAsync(a) <-> Task.eval(a).executeAsync
-    * }}}
+    * ```
     *
     * @param a is the thunk to process on evaluation
     */
@@ -2585,9 +2593,9 @@ object Task extends TaskInstancesLevel1 {
     * Calling `create` with a callback that returns `Unit` is
     * equivalent with [[Task.async0]]:
     *
-    * {{{
+    * ```scala
     *   Task.simple(f) <-> Task.create(f)
-    * }}}
+    * ```
     *
     * Example:
     *
@@ -2599,14 +2607,13 @@ object Task extends TaskInstancesLevel1 {
     *       f.onComplete(cb)(scheduler)
     *     }
     * }}}
-    *
     * We could return a [[monix.execution.Cancelable Cancelable]]
     * reference and thus make a cancelable task, thus for an `f` that
     * can be passed to [[Task.cancelable0]] this equivalence holds:
     *
-    * {{{
+    * ```scala
     *   Task.cancelable(f) <-> Task.create(f)
-    * }}}
+    * ```
     *
     * Example:
     *
@@ -2690,6 +2697,10 @@ object Task extends TaskInstancesLevel1 {
     * As an example, this would be equivalent with [[Task.timeout]]:
     * {{{
     *   import scala.concurrent.duration._
+    *   import scala.concurrent.TimeoutException
+    *
+    *   // some long running task
+    *   val myTask = Task(42)
     *
     *   val timeoutError = Task
     *     .raiseError(new TimeoutException)
@@ -2975,7 +2986,7 @@ object Task extends TaskInstancesLevel1 {
     *   }
     *
     *   // Yields Failure(e), because the second arg is a failure
-    *   Task.map2(fa1, Task.raiseError(e)) { (a, b) =>
+    *   Task.map2(fa1, Task.raiseError[Int](new RuntimeException("boo"))) { (a, b) =>
     *     a + b
     *   }
     * }}}
@@ -3007,7 +3018,7 @@ object Task extends TaskInstancesLevel1 {
     *   }
     *
     *   // Yields Failure(e), because the second arg is a failure
-    *   Task.map3(fa1, Task.raiseError(e), fa3) { (a, b, c) =>
+    *   Task.map3(fa1, Task.raiseError[Int](new RuntimeException("boo")), fa3) { (a, b, c) =>
     *     a + b + c
     *   }
     * }}}
@@ -3043,7 +3054,7 @@ object Task extends TaskInstancesLevel1 {
     *   }
     *
     *   // Yields Failure(e), because the second arg is a failure
-    *   Task.map4(fa1, Task.raiseError(e), fa3, fa4) {
+    *   Task.map4(fa1, Task.raiseError[Int](new RuntimeException("boo")), fa3, fa4) {
     *     (a, b, c, d) => a + b + c + d
     *   }
     * }}}
@@ -3081,7 +3092,7 @@ object Task extends TaskInstancesLevel1 {
     *   }
     *
     *   // Yields Failure(e), because the second arg is a failure
-    *   Task.map5(fa1, Task.raiseError(e), fa3, fa4, fa5) {
+    *   Task.map5(fa1, Task.raiseError[Int](new RuntimeException("boo")), fa3, fa4, fa5) {
     *     (a, b, c, d, e) => a + b + c + d + e
     *   }
     * }}}
@@ -3120,7 +3131,7 @@ object Task extends TaskInstancesLevel1 {
     *   }
     *
     *   // Yields Failure(e), because the second arg is a failure
-    *   Task.map6(fa1, Task.raiseError(e), fa3, fa4, fa5, fa6) {
+    *   Task.map6(fa1, Task.raiseError[Int](new RuntimeException("boo")), fa3, fa4, fa5, fa6) {
     *     (a, b, c, d, e, f) => a + b + c + d + e + f
     *   }
     * }}}
@@ -3154,7 +3165,7 @@ object Task extends TaskInstancesLevel1 {
     *   }
     *
     *   // Yields Failure(e), because the second arg is a failure
-    *   Task.parMap2(fa1, Task.raiseError(e)) { (a, b) =>
+    *   Task.parMap2(fa1, Task.raiseError[Int](new RuntimeException("boo"))) { (a, b) =>
     *     a + b
     *   }
     * }}}
@@ -3188,7 +3199,7 @@ object Task extends TaskInstancesLevel1 {
     *   }
     *
     *   // Yields Failure(e), because the second arg is a failure
-    *   Task.parMap3(fa1, Task.raiseError(e), fa3) { (a, b, c) =>
+    *   Task.parMap3(fa1, Task.raiseError[Int](new RuntimeException("boo")), fa3) { (a, b, c) =>
     *     a + b + c
     *   }
     * }}}
@@ -3225,7 +3236,7 @@ object Task extends TaskInstancesLevel1 {
     *   }
     *
     *   // Yields Failure(e), because the second arg is a failure
-    *   Task.parMap4(fa1, Task.raiseError(e), fa3, fa4) {
+    *   Task.parMap4(fa1, Task.raiseError[Int](new RuntimeException("boo")), fa3, fa4) {
     *     (a, b, c, d) => a + b + c + d
     *   }
     * }}}
@@ -3263,7 +3274,7 @@ object Task extends TaskInstancesLevel1 {
     *   }
     *
     *   // Yields Failure(e), because the second arg is a failure
-    *   Task.parMap5(fa1, Task.raiseError(e), fa3, fa4, fa5) {
+    *   Task.parMap5(fa1, Task.raiseError[Int](new RuntimeException("boo")), fa3, fa4, fa5) {
     *     (a, b, c, d, e) => a + b + c + d + e
     *   }
     * }}}
@@ -3302,7 +3313,7 @@ object Task extends TaskInstancesLevel1 {
     *   }
     *
     *   // Yields Failure(e), because the second arg is a failure
-    *   Task.parMap6(fa1, Task.raiseError(e), fa3, fa4, fa5, fa6) {
+    *   Task.parMap6(fa1, Task.raiseError[Int](new RuntimeException("boo")), fa3, fa4, fa5, fa6) {
     *     (a, b, c, d, e, f) => a + b + c + d + e + f
     *   }
     * }}}
